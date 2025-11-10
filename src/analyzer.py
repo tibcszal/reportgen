@@ -55,6 +55,7 @@ def analyze_data(
         "overall_error_count": overall_error_count,
         "test_duration_in_seconds": test_duration_in_seconds,
         "error_count_per_second": error_count_per_second,
+        "transaction_count_per_second": tps_by_second,
         "overall_maximum_response_time": overall_maximum_response_time,
         "overall_minimum_response_time": overall_minimum_response_time,
         "overall_avg_response_time": overall_avg_response_time,
