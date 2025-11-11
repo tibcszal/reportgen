@@ -20,7 +20,8 @@ def main():
     if args.dry_run:
         print("Dry run enabled, skipping report generation.")
         return
-    generate_excel_report(analysis_results, args.output)
+    asdf = []
+    generate_excel_report(asdf, args.output)
 
 
 if __name__ == "__main__":
