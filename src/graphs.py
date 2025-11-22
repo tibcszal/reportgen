@@ -30,6 +30,7 @@ def plot_tps_over_time(
     marker_style = "o" if duration <= 120 else None
     ax.plot(seconds, tps_values, marker=marker_style, linewidth=1.4)
     ax.set_xlim(1, duration)
+    ax.set_ylim(0, 100)
     ax.set_xlabel("Second")
     ax.set_ylabel("Transactions")
     ax.set_title(title or f"TPS Over Time: {result.get('test_name', 'unknown')}")
@@ -117,6 +118,7 @@ def plot_error_rate_by_api(
     ax.bar(apis, rates, color="#d9534f")
     ax.set_ylabel("Error Rate")
     ax.set_title(title or f"Error Rate by API: {result.get('test_name', 'unknown')}")
+    ax.set_xticks(list(apis))
     ax.set_xticklabels(apis, rotation=45, ha="right")
     ax.set_ylim(0, max(rates) * 1.15 if rates else 1)
     ax.grid(axis="y", linestyle="--", alpha=0.35)
