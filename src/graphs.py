@@ -18,18 +18,18 @@ def _build_uniform_time_series(data_map: List[float]) -> tuple[list[int], list[f
 def plot_tps_over_time(
     result: Dict[str, Any], *, title: Optional[str] = None
 ) -> Figure:
-    tps_by_second: Dict[int, float] = result.get("transaction_count_per_second", {})
+    if not is_transaction_result(result):
+        return _empty_fig("No transaction data")
+    tps_by_second: Dict[str, float] = result.get("transaction_count_per_second", {})
     duration = int(result.get("test_duration_in_seconds", len(tps_by_second)))
     if duration <= 0:
-        fig, ax = plt.subplots()
-        ax.text(0.5, 0.5, "No duration", ha="center", va="center")
-        ax.set_axis_off()
-        return fig
+        return _empty_fig("No duration")
     seconds, tps_values = _build_uniform_time_series(list(tps_by_second.values()))
     fig, ax = plt.subplots(figsize=(8, 4))
     marker_style = "o" if duration <= 120 else None
     ax.plot(seconds, tps_values, marker=marker_style, linewidth=1.4)
-    ax.set_xlim(1, duration)
+    if duration > 0 and seconds:
+        ax.set_xlim(1, max(seconds))
     ax.set_ylim(0, 100)
     ax.set_xlabel("Second")
     ax.set_ylabel("Transactions")
@@ -41,17 +41,17 @@ def plot_tps_over_time(
 def plot_errors_over_time(
     result: Dict[str, Any], *, title: Optional[str] = None
 ) -> Figure:
+    if not is_transaction_result(result):
+        return _empty_fig("No error data")
     err_map: Dict[int, int] = result.get("error_count_per_second", {})
     duration = int(result.get("test_duration_in_seconds", len(err_map)))
     if duration <= 0:
-        fig, ax = plt.subplots()
-        ax.text(0.5, 0.5, "No duration", ha="center", va="center")
-        ax.set_axis_off()
-        return fig
+        return _empty_fig("No duration")
     seconds, err_values = _build_uniform_time_series(list(err_map.values()))
     fig, ax = plt.subplots(figsize=(8, 4))
     ax.bar(seconds, err_values, color="#d9534f")
-    ax.set_xlim(1, duration)
+    if duration > 0 and seconds:
+        ax.set_xlim(1, max(seconds))
     ax.set_xlabel("Second")
     ax.set_ylabel("Errors")
     ax.set_title(title or f"Errors Over Time: {result.get('test_name', 'unknown')}")
@@ -62,6 +62,8 @@ def plot_errors_over_time(
 def plot_response_times_by_api(
     result: Dict[str, Any], *, title: Optional[str] = None
 ) -> Figure:
+    if not is_transaction_result(result):
+        return _empty_fig("No response time data")
     max_map: Dict[str, int] = result.get("maximum_response_time_per_api", {})
     min_map: Dict[str, int] = result.get("minimum_response_time_per_api", {})
     avg_map: Dict[str, float] = result.get("average_response_time_per_api", {})
@@ -100,6 +102,8 @@ def plot_response_times_by_api(
 def plot_error_rate_by_api(
     result: Dict[str, Any], *, title: Optional[str] = None
 ) -> Figure:
+    if not is_transaction_result(result):
+        return _empty_fig("No error rate data")
     tx_map: Dict[str, int] = result.get("transaction_count_per_api", {})
     err_map: Dict[str, int] = result.get("error_count_per_api", {})
     apis = sorted(set(tx_map.keys()) | set(err_map.keys()))
@@ -129,10 +133,10 @@ def plot_comparison_tps(
     results: List[Dict[str, Any]], *, title: str = "TPS Comparison"
 ) -> Figure:
     if not results:
-        fig, ax = plt.subplots()
-        ax.text(0.5, 0.5, "No results provided", ha="center", va="center")
-        ax.set_axis_off()
-        return fig
+        return _empty_fig("No results provided")
+    results = [r for r in results if is_transaction_result(r)]
+    if not results:
+        return _empty_fig("No transaction results provided")
     max_duration = max(int(r.get("test_duration_in_seconds", 0)) for r in results)
     fig, ax = plt.subplots(figsize=(9, 5))
     for r in results:
@@ -168,7 +172,8 @@ def create_and_save_graphs(
 ) -> None:
     os.makedirs(plots_dir, exist_ok=True)
 
-    for result in analysis_results:
+    tx_results = [r for r in analysis_results if is_transaction_result(r)]
+    for result in tx_results:
         test_name = result.get("test_name", "unknown")
         figures: list[tuple[Figure, str]] = [
             (plot_tps_over_time(result), f"{test_name}_tps_over_time"),
@@ -182,8 +187,8 @@ def create_and_save_graphs(
             finally:
                 plt.close(fig)
 
-    if len(analysis_results) > 1:
-        comp = plot_comparison_tps(analysis_results)
+    if len(tx_results) > 1:
+        comp = plot_comparison_tps(tx_results)
         try:
             save_figure(comp, plots_dir, "comparison_tps")
         finally:
@@ -199,3 +204,18 @@ __all__ = [
     "save_figure",
     "create_and_save_graphs",
 ]
+
+
+def is_transaction_result(result: Dict[str, Any]) -> bool:
+    return "transaction_count_per_second" in result or "overall_transaction_count" in result
+
+
+def is_resource_result(result: Dict[str, Any]) -> bool:
+    return "cpu_avg_per_pod" in result or ("overall" in result and "overall_avg_cpu_mcores" in result["overall"])
+
+
+def _empty_fig(message: str) -> Figure:
+    fig, ax = plt.subplots()
+    ax.text(0.5, 0.5, message, ha="center", va="center")
+    ax.set_axis_off()
+    return fig

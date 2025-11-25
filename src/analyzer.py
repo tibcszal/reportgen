@@ -133,7 +133,7 @@ def get_dfs_by_seconds(df: pd.DataFrame) -> dict[str, pd.DataFrame]:
     for second in range(
         df["timeStamp"].min() // 1000, df["timeStamp"].max() // 1000 + 1
     ):
-        results[f"second"] = df[
+        results[f"{second}"] = df[
             (df["timeStamp"] >= second * 1000) & (df["timeStamp"] < (second + 1) * 1000)
         ]
     return results
