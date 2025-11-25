@@ -83,8 +83,10 @@ def analyze_resource_data(test_name: str, df_raw: pd.DataFrame) -> dict[str, Any
         "test_name": test_name,
         "cpu_avg_per_pod": cpu_avg_per_pod,
         "cpu_max_per_pod": cpu_max_per_pod,
+        "cpu_min_per_pod": cpu_min_per_pod,
         "memory_avg_per_pod": mem_avg_per_pod,
         "memory_max_per_pod": mem_max_per_pod,
+        "memory_min_per_pod": mem_min_per_pod,
         "overall": overall,
     }
 
@@ -104,7 +106,7 @@ def get_numeric_by_group(
 def evaluate_results(
     overall_error_count: int,
     overall_transaction_count: int,
-    tps_by_second: dict[int, float],
+    tps_by_second: dict[str, float],
     config: dict[str, Any],
 ) -> str:
     if (overall_error_count / overall_transaction_count) > config[
@@ -118,20 +120,20 @@ def evaluate_results(
 
 
 def get_tps_by_second(
-    dfs_by_seconds: dict[int, pd.DataFrame],
-) -> dict[int, float]:
-    results: dict[int, float] = {}
+    dfs_by_seconds: dict[str, pd.DataFrame],
+) -> dict[str, float]:
+    results: dict[str, float] = {}
     for second, df in dfs_by_seconds.items():
         results[second] = len(df) / 1.0
     return results
 
 
-def get_dfs_by_seconds(df: pd.DataFrame) -> dict[int, pd.DataFrame]:
-    results: dict[int, pd.DataFrame] = {}
+def get_dfs_by_seconds(df: pd.DataFrame) -> dict[str, pd.DataFrame]:
+    results: dict[str, pd.DataFrame] = {}
     for second in range(
         df["timeStamp"].min() // 1000, df["timeStamp"].max() // 1000 + 1
     ):
-        results[second] = df[
+        results[f"second"] = df[
             (df["timeStamp"] >= second * 1000) & (df["timeStamp"] < (second + 1) * 1000)
         ]
     return results
@@ -142,8 +144,8 @@ def get_test_duration_in_seconds(df_raw: pd.DataFrame) -> int:
 
 
 def get_error_count_per_second(
-    dfs_by_seconds: dict[int, pd.DataFrame],
-) -> dict[int, int]:
+    dfs_by_seconds: dict[str, pd.DataFrame],
+) -> dict[str, int]:
     return get_counts_by_group(dfs_by_seconds, lambda df: get_error_count_from_df(df))
 
 
