@@ -10,7 +10,7 @@ def main():
 
     args = parse_args()
 
-    dfs_raw, config = load(args.request_results_dir, args.generator, args.config)
+    dfs_raw, config = load(args.results_dir, args.generator, args.config)
 
     analysis_results: list[dict[str, Any]] = [
         analyze_data(test_name, df, config) for test_name, df in dfs_raw.items()

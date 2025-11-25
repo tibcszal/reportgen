@@ -26,11 +26,15 @@ def load_dfs_per_suite_flat(
     for entry in sorted(listdir(requests_dir)):
         full_path = path.join(requests_dir, entry)
         if path.isfile(full_path) and entry.endswith(".csv"):
-            key = f"__root__.{entry[:-4]}"
+            testname = entry[:-4]
+            key = f"__root__.{testname}"
             df = pd.read_csv(full_path)
             if generator_type == "k6":
                 df = normalize_k6(df)
             results[key] = df
+            resource_df = load_resource_df_if_exists(requests_dir, testname)
+            if resource_df is not None:
+                results[f"{key}_resources"] = resource_df
 
     for entry in sorted(listdir(requests_dir)):
         suite_path = path.join(requests_dir, entry)
@@ -46,6 +50,9 @@ def load_dfs_per_suite_flat(
             if generator_type == "k6":
                 df = normalize_k6(df)
             results[f"{suite_name}.{testname}"] = df
+            resource_df = load_resource_df_if_exists(suite_path, testname)
+            if resource_df is not None:
+                results[f"{suite_name}.{testname}_resources"] = resource_df
 
     return results
 
@@ -63,6 +70,9 @@ def load_dfs_grouped(
             if generator_type == "k6":
                 df = normalize_k6(df)
             root_suite[testname] = df
+            resource_df = load_resource_df_if_exists(requests_dir, testname)
+            if resource_df is not None:
+                root_suite[f"{testname}_resources"] = resource_df
     if root_suite:
         grouped["__root__"] = root_suite
 
@@ -80,9 +90,48 @@ def load_dfs_grouped(
             if generator_type == "k6":
                 df = normalize_k6(df)
             suite_tests[testname] = df
+            resource_df = load_resource_df_if_exists(suite_path, testname)
+            if resource_df is not None:
+                suite_tests[f"{testname}_resources"] = resource_df
         if suite_tests:
             grouped[entry] = suite_tests
     return grouped
+
+
+def load_resource_df_if_exists(base_dir: str, testname: str) -> pd.DataFrame | None:
+    """Return a flattened pod metrics dataframe if the resource file exists."""
+    resource_path = path.join(base_dir, f"{testname}_resources.json")
+    if not path.isfile(resource_path):
+        return None
+    return load_resources_json(resource_path)
+
+
+def load_resources_json(resource_path: str) -> pd.DataFrame:
+    with open(resource_path, "r", encoding="UTF-8") as f:
+        snapshots = json.load(f)
+
+    rows = []
+    for snapshot in snapshots or []:
+        timestamp = snapshot.get("timestamp")
+        for pod in snapshot.get("pods", []):
+            metadata = pod.get("metadata", {})
+            podname = metadata.get("name")
+            namespace = metadata.get("namespace")
+            for container in pod.get("containers", []):
+                usage = container.get("usage", {})
+                rows.append(
+                    {
+                        "timestamp": timestamp,
+                        "podname": podname,
+                        "namespace": namespace,
+                        "container": container.get("name"),
+                        "cpu": usage.get("cpu"),
+                        "memory": usage.get("memory"),
+                    }
+                )
+
+    columns = ["timestamp", "podname", "namespace", "container", "cpu", "memory"]
+    return pd.DataFrame(rows, columns=columns)
 
 
 def normalize_k6(df: pd.DataFrame) -> pd.DataFrame:

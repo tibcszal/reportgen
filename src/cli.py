@@ -8,11 +8,11 @@ def parse_args():
         "-c",
         "--config",
         required=False,
-        default="/home/tcz/Documents/Uni/Thesis/report_generation_thesis/src/config.json",
+        default="/home/tcz/Documents/Uni/Thesis/reportgen/src/config.json",
     )
-    parser.add_argument("-req", "--request_results_dir", required=True)
-    parser.add_argument("-res", "--resource_usage_dir", required=False)
-    parser.add_argument("-o", "--output", required=True)
+    parser.add_argument("-r", "--results_dir", required=True, help="Directory containing the results CSV and resource usage JSON files.")
+    # Not required since dry runs may not produce an output file
+    parser.add_argument("-o", "--output", required=False)
     parser.add_argument(
         "-p",
         "--plots_dir",
