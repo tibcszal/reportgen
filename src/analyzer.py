@@ -60,8 +60,10 @@ def analyze_results_data(
 
 def analyze_resource_data(test_name: str, df_raw: pd.DataFrame) -> dict[str, Any]:
     df = add_numeric_resource_columns(df_raw)
+    ts_order = {ts: idx for idx, ts in enumerate(sorted(df["timestamp"].unique()), start=1)}
+    df["timestamp_offset"] = df["timestamp"].map(ts_order)
     dfs_by_pod = sort_by(df, "podname")
-    dfs_by_timestamp = sort_by(df, "timestamp")
+    dfs_by_timestamp = sort_by(df, "timestamp_offset")
 
     cpu_avg_per_pod = get_numeric_by_group(dfs_by_pod, "cpu_mcores", "mean")
     cpu_max_per_pod = get_numeric_by_group(dfs_by_pod, "cpu_mcores", "max")
@@ -101,9 +103,9 @@ def analyze_resource_data(test_name: str, df_raw: pd.DataFrame) -> dict[str, Any
     }
 
 def get_numeric_by_group(
-    grouped: dict[str, pd.DataFrame], column: str, operation: str
-) -> dict[str, float]:
-    results: dict[str, float] = {}
+    grouped: dict[Any, pd.DataFrame], column: str, operation: str
+) -> dict[Any, float]:
+    results: dict[Any, float] = {}
     for name, df in grouped.items():
         if operation == "mean":
             results[name] = df[column].mean()
@@ -116,7 +118,7 @@ def get_numeric_by_group(
 def evaluate_results(
     overall_error_count: int,
     overall_transaction_count: int,
-    tps_by_second: dict[str, float],
+    tps_by_second: dict[int, float],
     config: dict[str, Any],
 ) -> str:
     if (overall_error_count / overall_transaction_count) > config[
@@ -130,20 +132,20 @@ def evaluate_results(
 
 
 def get_tps_by_second(
-    dfs_by_seconds: dict[str, pd.DataFrame],
-) -> dict[str, float]:
-    results: dict[str, float] = {}
+    dfs_by_seconds: dict[int, pd.DataFrame],
+) -> dict[int, float]:
+    results: dict[int, float] = {}
     for second, df in dfs_by_seconds.items():
         results[second] = len(df) / 1.0
     return results
 
 
-def get_dfs_by_seconds(df: pd.DataFrame) -> dict[str, pd.DataFrame]:
-    results: dict[str, pd.DataFrame] = {}
-    for second in range(
-        df["timeStamp"].min() // 1000, df["timeStamp"].max() // 1000 + 1
-    ):
-        results[f"{second}"] = df[
+def get_dfs_by_seconds(df: pd.DataFrame) -> dict[int, pd.DataFrame]:
+    results: dict[int, pd.DataFrame] = {}
+    start_sec = df["timeStamp"].min() // 1000
+    end_sec = df["timeStamp"].max() // 1000
+    for offset, second in enumerate(range(start_sec, end_sec + 1), start=1):
+        results[offset] = df[
             (df["timeStamp"] >= second * 1000) & (df["timeStamp"] < (second + 1) * 1000)
         ]
     return results
@@ -154,8 +156,8 @@ def get_test_duration_in_seconds(df_raw: pd.DataFrame) -> int:
 
 
 def get_error_count_per_second(
-    dfs_by_seconds: dict[str, pd.DataFrame],
-) -> dict[str, int]:
+    dfs_by_seconds: dict[int, pd.DataFrame],
+) -> dict[int, int]:
     return get_counts_by_group(dfs_by_seconds, lambda df: get_error_count_from_df(df))
 
 
@@ -176,16 +178,21 @@ def get_transaction_count_per_api(
 
 
 def sort_by(df_raw: pd.DataFrame, column: str) -> dict[str, pd.DataFrame]:
-    results_dict: dict[str, pd.DataFrame] = {}
-    for value in df_raw[column].unique():
-        results_dict[str(value)] = df_raw[df_raw[column] == value]
+    results_dict: dict[Any, pd.DataFrame] = {}
+    unique_vals = list(df_raw[column].unique())
+    try:
+        unique_vals = sorted(unique_vals)
+    except TypeError:
+        pass
+    for value in unique_vals:
+        results_dict[value] = df_raw[df_raw[column] == value]
     return results_dict
 
 
 def get_counts_by_group(
-    grouped: dict[str, pd.DataFrame], counter: Callable[[pd.DataFrame], int]
-) -> dict[str, int]:
-    results: dict[str, int] = {}
+    grouped: dict[Any, pd.DataFrame], counter: Callable[[pd.DataFrame], int]
+) -> dict[Any, int]:
+    results: dict[Any, int] = {}
     for name, df in grouped.items():
         results[name] = counter(df)
     return results

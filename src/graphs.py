@@ -7,11 +7,24 @@ import math
 import os
 
 
-def _build_uniform_time_series(data_map: List[float]) -> tuple[list[int], list[float]]:
-    seconds: list[int] = list(range(1, len(data_map)))
-    values: list[float] = []
-    for sec in seconds:
-        values.append(data_map[sec - 1])
+def _series_from_second_map(
+    data_map: Dict[Any, Any]
+) -> tuple[list[int], list[float]]:
+    if not data_map:
+        return [], []
+    series: list[tuple[int, float]] = []
+    for k, v in data_map.items():
+        try:
+            sec = int(k)
+            val = float(v)
+        except (TypeError, ValueError):
+            continue
+        series.append((sec, val))
+    if not series:
+        return [], []
+    series.sort(key=lambda x: x[0])
+    seconds = [sec for sec, _ in series]
+    values = [val for _, val in series]
     return seconds, values
 
 
@@ -24,13 +37,13 @@ def plot_tps_over_time(
     duration = int(result.get("test_duration_in_seconds", len(tps_by_second)))
     if duration <= 0:
         return _empty_fig("No duration")
-    seconds, tps_values = _build_uniform_time_series(list(tps_by_second.values()))
+    seconds, tps_values = _series_from_second_map(tps_by_second)
     fig, ax = plt.subplots(figsize=(8, 4))
     marker_style = "o" if duration <= 120 else None
     ax.plot(seconds, tps_values, marker=marker_style, linewidth=1.4)
     if duration > 0 and seconds:
         ax.set_xlim(1, max(seconds))
-    ax.set_ylim(0, 100)
+    ax.set_ylim(0, max(tps_values) * 1.15)
     ax.set_xlabel("Second")
     ax.set_ylabel("Transactions")
     ax.set_title(title or f"TPS Over Time: {result.get('test_name', 'unknown')}")
@@ -47,7 +60,7 @@ def plot_errors_over_time(
     duration = int(result.get("test_duration_in_seconds", len(err_map)))
     if duration <= 0:
         return _empty_fig("No duration")
-    seconds, err_values = _build_uniform_time_series(list(err_map.values()))
+    seconds, err_values = _series_from_second_map(err_map)
     fig, ax = plt.subplots(figsize=(8, 4))
     ax.bar(seconds, err_values, color="#d9534f")
     if duration > 0 and seconds:
@@ -141,7 +154,7 @@ def plot_comparison_tps(
     fig, ax = plt.subplots(figsize=(9, 5))
     for r in results:
         tps_map: Dict[int, float] = r.get("transaction_count_per_second", {})
-        seconds, tps_values = _build_uniform_time_series(list(tps_map.values()))
+        seconds, tps_values = _series_from_second_map(tps_map)
         marker_style = "o" if max_duration <= 120 else None
         ax.plot(
             seconds,
@@ -168,7 +181,7 @@ def save_figure(fig: Figure, directory: str, name: str, *, fmt: str = "png") -> 
 
 
 def create_and_save_graphs(
-    analysis_results: List[Dict[str, Any]], plots_dir: str
+    analysis_results: List[Dict[str, Any]], plots_dir: str, config : dict[str, Any]
 ) -> None:
     os.makedirs(plots_dir, exist_ok=True)
 
@@ -240,7 +253,7 @@ def _empty_fig(message: str) -> Figure:
     return fig
 
 
-def _series_from_time_map(time_map: Dict[str, float]) -> tuple[list[str], list[float]]:
+def _series_from_time_map(time_map: Dict[Any, float]) -> tuple[list[int], list[float]]:
     if not time_map:
         return [], []
     series: list[tuple[float, float]] = []
@@ -252,14 +265,14 @@ def _series_from_time_map(time_map: Dict[str, float]) -> tuple[list[str], list[f
             continue
         series.append((t, value))
     if not series:
-        seconds = list(str(range(1, len(time_map) + 1)))
+        seconds = list(range(1, len(time_map) + 1))
         return seconds, list(time_map.values())
     series.sort(key=lambda x: x[0])
     times = [t for t, _ in series]
     if max(times) > 1e10:
         times = [t / 1000.0 for t in times]
     start = min(times)
-    norm_times = [str(t - start + 1) for t in times]
+    norm_times = [int(round(t - start + 1)) for t in times]
     values = [v for _, v in series]
     return norm_times, values
 
@@ -290,7 +303,7 @@ def plot_tps_vs_resource_usage(
     cpu_map: Dict[str, float] = resource_result.get("cpu_avg_over_time", {})
     mem_map_raw: Dict[str, float] = resource_result.get("memory_avg_over_time", {})
 
-    tps_seconds, tps_values = _build_uniform_time_series(list(tps_map.values()))
+    tps_seconds, tps_values = _series_from_second_map(tps_map)
     cpu_seconds, cpu_values = _series_from_time_map(cpu_map)
     mem_seconds, mem_bytes = _series_from_time_map(mem_map_raw)
     mem_values: list[float] = []
@@ -314,6 +327,7 @@ def plot_tps_vs_resource_usage(
     ax1.set_xlabel("Second")
     ax1.set_ylabel("Transactions per second")
     ax1.set_xlim(1, float(max_time))
+    ax1.set_ylim(0, max(tps_values) * 1.15)
     ax1.grid(True, linestyle="--", alpha=0.35)
 
     ax2 = ax1.twinx()

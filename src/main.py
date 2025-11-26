@@ -19,7 +19,7 @@ def main():
     ]
 
     print("Creating and saving graphs...")
-    create_and_save_graphs(analysis_results, args.plots_dir)
+    create_and_save_graphs(analysis_results, args.plots_dir, args.config)
     if args.dry_run:
         print("Dry run enabled, skipping report generation.")
         return
