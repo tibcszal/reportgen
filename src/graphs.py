@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 import math
 import os
+from config_store import get_config_value
 
 
 def _series_from_second_map(
@@ -43,7 +44,7 @@ def plot_tps_over_time(
     ax.plot(seconds, tps_values, marker=marker_style, linewidth=1.4)
     if duration > 0 and seconds:
         ax.set_xlim(1, max(seconds))
-    ax.set_ylim(0, max(tps_values) * 1.15)
+    ax.set_ylim(0, get_config_value("target_tps", 100))
     ax.set_xlabel("Second")
     ax.set_ylabel("Transactions")
     ax.set_title(title or f"TPS Over Time: {result.get('test_name', 'unknown')}")
@@ -164,6 +165,7 @@ def plot_comparison_tps(
             label=r.get("test_name", "unknown"),
         )
     ax.set_xlim(1, max_duration)
+    ax.set_ylim(0, get_config_value("target_tps", 100))
     ax.set_xlabel("Second")
     ax.set_ylabel("Transactions")
     ax.set_title(title)
@@ -327,7 +329,7 @@ def plot_tps_vs_resource_usage(
     ax1.set_xlabel("Second")
     ax1.set_ylabel("Transactions per second")
     ax1.set_xlim(1, float(max_time))
-    ax1.set_ylim(0, max(tps_values) * 1.15)
+    ax1.set_ylim(0, get_config_value("target_tps", 100))
     ax1.grid(True, linestyle="--", alpha=0.35)
 
     ax2 = ax1.twinx()
