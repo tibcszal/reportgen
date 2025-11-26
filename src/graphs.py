@@ -172,15 +172,33 @@ def create_and_save_graphs(
 ) -> None:
     os.makedirs(plots_dir, exist_ok=True)
 
+    resource_results_by_base: Dict[str, Dict[str, Any]] = {
+        _base_test_name(r.get("test_name", "unknown")): r
+        for r in analysis_results
+        if is_resource_result(r)
+    }
     tx_results = [r for r in analysis_results if is_transaction_result(r)]
     for result in tx_results:
         test_name = result.get("test_name", "unknown")
+        base_name = _base_test_name(test_name)
+        resource_result = resource_results_by_base.get(base_name)
         figures: list[tuple[Figure, str]] = [
             (plot_tps_over_time(result), f"{test_name}_tps_over_time"),
             (plot_errors_over_time(result), f"{test_name}_errors_over_time"),
             (plot_response_times_by_api(result), f"{test_name}_response_times_by_api"),
             (plot_error_rate_by_api(result), f"{test_name}_error_rate_by_api"),
         ]
+        if resource_result:
+            figures.append(
+                (
+                    plot_tps_vs_resource_usage(
+                        result,
+                        resource_result,
+                        title=f"TPS vs Resources: {base_name}",
+                    ),
+                    f"{test_name}_tps_vs_resources",
+                )
+            )
         for fig, filename in figures:
             try:
                 save_figure(fig, plots_dir, filename)
@@ -200,6 +218,7 @@ __all__ = [
     "plot_errors_over_time",
     "plot_response_times_by_api",
     "plot_error_rate_by_api",
+    "plot_tps_vs_resource_usage",
     "plot_comparison_tps",
     "save_figure",
     "create_and_save_graphs",
@@ -218,4 +237,114 @@ def _empty_fig(message: str) -> Figure:
     fig, ax = plt.subplots()
     ax.text(0.5, 0.5, message, ha="center", va="center")
     ax.set_axis_off()
+    return fig
+
+
+def _series_from_time_map(time_map: Dict[str, float]) -> tuple[list[str], list[float]]:
+    if not time_map:
+        return [], []
+    series: list[tuple[float, float]] = []
+    for k, v in time_map.items():
+        try:
+            t = float(k)
+            value = float(v)
+        except (TypeError, ValueError):
+            continue
+        series.append((t, value))
+    if not series:
+        seconds = list(str(range(1, len(time_map) + 1)))
+        return seconds, list(time_map.values())
+    series.sort(key=lambda x: x[0])
+    times = [t for t, _ in series]
+    if max(times) > 1e10:
+        times = [t / 1000.0 for t in times]
+    start = min(times)
+    norm_times = [str(t - start + 1) for t in times]
+    values = [v for _, v in series]
+    return norm_times, values
+
+
+def _bytes_to_mib(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value) / (1024**2)
+    except (TypeError, ValueError):
+        return None
+
+
+def _base_test_name(test_name: str) -> str:
+    return test_name[:-10] if test_name.endswith("_resources") else test_name
+
+
+def plot_tps_vs_resource_usage(
+    result: Dict[str, Any],
+    resource_result: Dict[str, Any],
+    *,
+    title: Optional[str] = None,
+) -> Figure:
+    if not (is_transaction_result(result) and is_resource_result(resource_result)):
+        return _empty_fig("No matching transaction/resource data")
+
+    tps_map: Dict[str, float] = result.get("transaction_count_per_second", {})
+    cpu_map: Dict[str, float] = resource_result.get("cpu_avg_over_time", {})
+    mem_map_raw: Dict[str, float] = resource_result.get("memory_avg_over_time", {})
+
+    tps_seconds, tps_values = _build_uniform_time_series(list(tps_map.values()))
+    cpu_seconds, cpu_values = _series_from_time_map(cpu_map)
+    mem_seconds, mem_bytes = _series_from_time_map(mem_map_raw)
+    mem_values: list[float] = []
+    for val in mem_bytes:
+        converted = _bytes_to_mib(val)
+        mem_values.append(converted if converted is not None else math.nan)
+
+    if not tps_values or (not cpu_values and not mem_values):
+        return _empty_fig("No overlapping TPS/resource data")
+
+    max_time = max(
+        [tps_seconds[-1] if tps_seconds else 0]
+        + ([max(cpu_seconds)] if cpu_seconds else [])
+        + ([max(mem_seconds)] if mem_seconds else [])
+    )
+
+    fig, ax1 = plt.subplots(figsize=(9, 5))
+    tps_line = ax1.plot(
+        tps_seconds, tps_values, label="TPS", color="#007bff", linewidth=1.3
+    )
+    ax1.set_xlabel("Second")
+    ax1.set_ylabel("Transactions per second")
+    ax1.set_xlim(1, float(max_time))
+    ax1.grid(True, linestyle="--", alpha=0.35)
+
+    ax2 = ax1.twinx()
+    handles = list(tps_line)
+
+    if cpu_values:
+        cpu_line = ax2.plot(
+            cpu_seconds,
+            cpu_values,
+            label="CPU (mcores)",
+            color="#f0ad4e",
+            linestyle="--",
+            linewidth=1.1,
+        )
+        handles.extend(cpu_line)
+    if mem_values:
+        mem_line = ax2.plot(
+            mem_seconds,
+            mem_values,
+            label="Memory (MiB)",
+            color="#5cb85c",
+            linestyle=":",
+            linewidth=1.1,
+        )
+        handles.extend(mem_line)
+    ax2.set_ylabel("CPU / Memory")
+
+    ax1.set_title(
+        title
+        or f"TPS vs Resources Over Time: {_base_test_name(result.get('test_name', 'unknown'))}"
+    )
+    ax1.legend(handles=handles, loc="upper right")
+    fig.tight_layout()
     return fig

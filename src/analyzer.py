@@ -61,6 +61,7 @@ def analyze_results_data(
 def analyze_resource_data(test_name: str, df_raw: pd.DataFrame) -> dict[str, Any]:
     df = add_numeric_resource_columns(df_raw)
     dfs_by_pod = sort_by(df, "podname")
+    dfs_by_timestamp = sort_by(df, "timestamp")
 
     cpu_avg_per_pod = get_numeric_by_group(dfs_by_pod, "cpu_mcores", "mean")
     cpu_max_per_pod = get_numeric_by_group(dfs_by_pod, "cpu_mcores", "max")
@@ -68,6 +69,11 @@ def analyze_resource_data(test_name: str, df_raw: pd.DataFrame) -> dict[str, Any
     mem_avg_per_pod = get_numeric_by_group(dfs_by_pod, "memory_bytes", "mean")
     mem_max_per_pod = get_numeric_by_group(dfs_by_pod, "memory_bytes", "max")
     mem_min_per_pod = get_numeric_by_group(dfs_by_pod, "memory_bytes", "min")
+
+    cpu_avg_over_time = get_numeric_by_group(dfs_by_timestamp, "cpu_mcores", "mean")
+    cpu_max_over_time = get_numeric_by_group(dfs_by_timestamp, "cpu_mcores", "max")
+    mem_avg_over_time = get_numeric_by_group(dfs_by_timestamp, "memory_bytes", "mean")
+    mem_max_over_time = get_numeric_by_group(dfs_by_timestamp, "memory_bytes", "max")
 
     overall = {
         "overall_avg_cpu_mcores": df["cpu_mcores"].mean(),
@@ -87,6 +93,10 @@ def analyze_resource_data(test_name: str, df_raw: pd.DataFrame) -> dict[str, Any
         "memory_avg_per_pod": mem_avg_per_pod,
         "memory_max_per_pod": mem_max_per_pod,
         "memory_min_per_pod": mem_min_per_pod,
+        "cpu_avg_over_time": cpu_avg_over_time,
+        "cpu_max_over_time": cpu_max_over_time,
+        "memory_avg_over_time": mem_avg_over_time,
+        "memory_max_over_time": mem_max_over_time,
         "overall": overall,
     }
 
