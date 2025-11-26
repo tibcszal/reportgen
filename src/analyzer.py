@@ -1,14 +1,14 @@
 import pandas as pd
 from typing import Any, Callable
+from config_store import get_config_value
 
 
 def analyze_data(
-    test_name: str, df_raw: pd.DataFrame, config: dict[str, Any]
+    test_name: str, df_raw: pd.DataFrame
 ) -> dict[str, Any]:
     if is_resource_dataframe(df_raw):
         return analyze_resource_data(test_name, df_raw)
-    return analyze_results_data(test_name, df_raw, config)
-
+    return analyze_results_data(test_name, df_raw)
 
 def is_resource_dataframe(df: pd.DataFrame) -> bool:
     required = {"timestamp", "podname", "namespace", "container", "cpu", "memory"}
@@ -16,7 +16,7 @@ def is_resource_dataframe(df: pd.DataFrame) -> bool:
 
 
 def analyze_results_data(
-    test_name: str, df_raw: pd.DataFrame, config: dict[str, Any]
+    test_name: str, df_raw: pd.DataFrame 
 ) -> dict[str, Any]:
     dfs_sorted_by_apis = sort_by(df_raw, "label")
 
@@ -36,7 +36,7 @@ def analyze_results_data(
 
     response_time_stats = get_response_time_stats(df_raw, dfs_sorted_by_apis)
     verdict = evaluate_results(
-        overall_error_count, overall_transaction_count, tps_by_second, config
+        overall_error_count, overall_transaction_count, tps_by_second
     )
 
     return {
@@ -118,15 +118,14 @@ def get_numeric_by_group(
 def evaluate_results(
     overall_error_count: int,
     overall_transaction_count: int,
-    tps_by_second: dict[int, float],
-    config: dict[str, Any],
+    tps_by_second: dict[int, float]
 ) -> str:
-    if (overall_error_count / overall_transaction_count) > config[
-        "error_rate_threshold"
-    ]:
+    err_threshold = get_config_value("error_rate_threshold", 0.1)
+    tps_threshold = get_config_value("tps_threshold", 100)
+    if (overall_error_count / overall_transaction_count) > err_threshold:
         return "FAIL"
     for tps in tps_by_second.values():
-        if tps < config["tps_threshold"]:
+        if tps < tps_threshold:
             return "FAIL"
     return "PASS"
 

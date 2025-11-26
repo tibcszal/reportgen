@@ -2,20 +2,19 @@ import pandas as pd
 from os import path, listdir
 import json
 from typing import Any, Dict
+from config_store import load_config
 
 
 def load(
     requests_dir: str, generator_type: str, config_path: str
-) -> tuple[dict[str, pd.DataFrame], dict[str, Any]]:
-    config = load_config_file(config_path)
+) -> dict[str, pd.DataFrame]:
+    load_config_file(config_path)
     dfs = load_dfs_per_suite_flat(requests_dir, generator_type)
-    return (dfs, config)
+    return dfs
 
 
-def load_config_file(config_path: str) -> dict[str, Any]:
-    with open(config_path, "r", encoding="UTF-8") as f:
-        config_dict: dict[str, Any] = json.load(f)
-    return config_dict
+def load_config_file(config_path: str) -> dict[str, Any] | None:
+    return load_config(config_path)
 
 
 def load_dfs_per_suite_flat(

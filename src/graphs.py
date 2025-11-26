@@ -181,7 +181,7 @@ def save_figure(fig: Figure, directory: str, name: str, *, fmt: str = "png") -> 
 
 
 def create_and_save_graphs(
-    analysis_results: List[Dict[str, Any]], plots_dir: str, config : dict[str, Any]
+    analysis_results: List[Dict[str, Any]], plots_dir: str
 ) -> None:
     os.makedirs(plots_dir, exist_ok=True)
 
