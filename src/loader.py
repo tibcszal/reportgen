@@ -136,7 +136,7 @@ def load_resources_json(resource_path: str) -> pd.DataFrame:
 
 def normalize_k6(df: pd.DataFrame) -> pd.DataFrame:
     df = df[df["metric_name"] == "http_req_duration"].copy()
-    df["label"] = df["method"] + " " + df["url"]
+    df["label"] = f"{df['method']} {df['url']}"
     df["timeStamp"] = df["timestamp"] * 1000
     df["elapsed"] = df["metric_value"]
     df["responseCode"] = df["status"]
