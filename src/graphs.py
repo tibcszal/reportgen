@@ -208,10 +208,10 @@ def create_and_save_graphs(
             suite, test = "__root__", test_name
         resource_result = resource_results_by_base.get(base_name)
         figures: list[tuple[Figure, str]] = [
-            (plot_tps_over_time(result), f"TPS Over Time - {test_name}"),
-            (plot_errors_over_time(result), f"Errors Over Time - {test_name}"),
-            (plot_response_times_by_api(result), f"Response Times by API - {test_name}"),
-            (plot_error_rate_by_api(result), f"Error Rate by API - {test_name}"),
+            (plot_tps_over_time(result), f"TPS Over Time"),
+            (plot_errors_over_time(result), f"Errors Over Time"),
+            (plot_response_times_by_api(result), f"Response Times by API"),
+            (plot_error_rate_by_api(result), f"Error Rate by API"),
         ]
         if resource_result:
             figures.append(
@@ -219,33 +219,33 @@ def create_and_save_graphs(
                     plot_tps_vs_resource_usage(
                         result,
                         resource_result,
-                        title=f"TPS vs Resources: {base_name}",
+                        title=f"TPS vs Resources",
                     ),
-                    f"TPS vs Resources - {test_name}",
+                    f"TPS vs Resources",
                 )
             )
             figures.append(
-                (plot_tps_vs_cpu(result, resource_result), f"TPS vs CPU - {test_name}")
+                (plot_tps_vs_cpu(result, resource_result), f"TPS vs CPU")
             )
             figures.append(
                 (
                     plot_tps_vs_memory(result, resource_result),
-                    f"TPS vs Memory - {test_name}",
+                    f"TPS vs Memory",
                 )
             )
             figures.append(
                 (
                     plot_errors_vs_resources(result, resource_result),
-                    f"Errors vs Resources - {test_name}",
+                    f"Errors vs Resources",
                 )
             )
             figures.append(
-                (plot_errors_vs_cpu(result, resource_result), f"Errors vs CPU - {test_name}")
+                (plot_errors_vs_cpu(result, resource_result), f"Errors vs CPU")
             )
             figures.append(
                 (
                     plot_errors_vs_memory(result, resource_result),
-                    f"Errors vs Memory - {test_name}",
+                    f"Errors vs Memory",
                 )
             )
         for fig, title in figures:
@@ -352,16 +352,37 @@ def _safe_id(text: str) -> str:
 
 
 def _render_dashboard(graphs_by_suite: dict[str, dict[str, list[dict[str, str]]]], output_path: str) -> None:
-    suites = sorted(graphs_by_suite.keys())
-    nav_links = "".join(
-        f'<a class="nav-link" href="#{_safe_id(suite)}">{html.escape(suite)}</a>'
-        for suite in suites
-    )
+    overall = graphs_by_suite.get("__overall__", {})
+    overall_graphs = []
+    if overall:
+        # Expect a single bucket like all_tests; flatten graphs
+        for charts in overall.values():
+            overall_graphs.extend(charts)
+
+    suites = sorted(k for k in graphs_by_suite.keys() if k != "__overall__")
+
+    overall_section = ""
+    if overall_graphs:
+        cards = "".join(
+            f'''
+            <div class="card">
+                <div class="card-title">{html.escape(chart["title"])}</div>
+                <img src="{chart["src"]}" alt="{html.escape(chart["title"])}" loading="lazy" />
+            </div>
+            '''
+            for chart in overall_graphs
+        )
+        overall_section = f"""
+        <section class="suite-section">
+            <h2>Overall</h2>
+            <div class="card-grid">{cards}</div>
+        </section>
+        """
 
     suite_sections: list[str] = []
     for suite in suites:
         tests = graphs_by_suite[suite]
-        test_blocks: list[str] = []
+        test_details: list[str] = []
         for test_name, charts in sorted(tests.items()):
             cards = "".join(
                 f'''
@@ -372,22 +393,24 @@ def _render_dashboard(graphs_by_suite: dict[str, dict[str, list[dict[str, str]]]
                 '''
                 for chart in charts
             )
-            test_blocks.append(
+            test_details.append(
                 f'''
-                <div class="test-block">
-                    <h3>{html.escape(test_name)}</h3>
+                <details class="test-details">
+                    <summary>{html.escape(test_name)}</summary>
                     <div class="card-grid">
                         {cards}
                     </div>
-                </div>
+                </details>
                 '''
             )
         suite_sections.append(
             f'''
-            <section id="{_safe_id(suite)}" class="suite-section">
-                <h2>Suite: {html.escape(suite)}</h2>
-                {''.join(test_blocks)}
-            </section>
+            <details class="suite-details">
+                <summary>{html.escape(suite)}</summary>
+                <div class="test-list">
+                    {''.join(test_details)}
+                </div>
+            </details>
             '''
         )
 
@@ -400,28 +423,32 @@ def _render_dashboard(graphs_by_suite: dict[str, dict[str, list[dict[str, str]]]
     body {{ font-family: Arial, sans-serif; margin: 0; background: #f8f9fa; color: #222; }}
     header {{ background: #343a40; color: white; padding: 12px 16px; position: sticky; top: 0; z-index: 10; }}
     h1 {{ margin: 0; font-size: 20px; }}
-    .nav {{ margin-top: 8px; display: flex; flex-wrap: wrap; gap: 8px; }}
-    .nav-link {{ color: #e9ecef; text-decoration: none; padding: 6px 10px; border-radius: 4px; background: #495057; font-size: 13px; }}
-    .nav-link:hover {{ background: #6c757d; }}
     main {{ padding: 16px; }}
-    .suite-section {{ margin-bottom: 32px; }}
-    .suite-section h2 {{ margin-bottom: 12px; }}
-    .test-block {{ margin-bottom: 24px; }}
+    .suite-section {{ margin-bottom: 24px; }}
     .card-grid {{ display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }}
     .card {{ background: white; border: 1px solid #dee2e6; border-radius: 6px; padding: 10px; box-shadow: 0 1px 2px rgba(0,0,0,0.06); }}
     .card-title {{ font-weight: 600; margin-bottom: 8px; font-size: 14px; }}
     img {{ width: 100%; height: auto; display: block; border-radius: 4px; }}
+    .suite-details, .test-details {{ margin-bottom: 10px; border: 1px solid #dee2e6; border-radius: 6px; background: white; }}
+    .suite-details > summary, .test-details > summary {{ cursor: pointer; padding: 10px 12px; font-weight: 600; list-style: none; }}
+    .suite-details > summary::-webkit-details-marker, .test-details > summary::-webkit-details-marker {{ display: none; }}
+    .suite-details > summary::before, .test-details > summary::before {{ content: "▶"; display: inline-block; margin-right: 8px; transition: transform 0.2s ease; }}
+    .suite-details[open] > summary::before, .test-details[open] > summary::before {{ transform: rotate(90deg); }}
+    .test-list {{ padding: 0 12px 12px 12px; }}
   </style>
 </head>
 <body>
   <header>
     <h1>Performance Dashboard</h1>
-    <div class="nav">
-      {nav_links}
-    </div>
   </header>
   <main>
-    {''.join(suite_sections)}
+    {overall_section}
+    <section class="suite-section">
+        <h2>Suites</h2>
+        <div class="suite-list">
+            {''.join(suite_sections)}
+        </div>
+    </section>
   </main>
 </body>
 </html>
