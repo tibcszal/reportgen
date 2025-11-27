@@ -5,7 +5,11 @@ import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 import math
 import os
+import html
+import re
 from config_store import get_config_value
+import base64
+from io import BytesIO
 
 
 def _series_from_second_map(
@@ -186,6 +190,8 @@ def create_and_save_graphs(
     analysis_results: List[Dict[str, Any]], plots_dir: str
 ) -> None:
     os.makedirs(plots_dir, exist_ok=True)
+    html_output = os.path.join(plots_dir, "dashboard.html")
+    graphs_by_suite: dict[str, dict[str, list[dict[str, str]]]] = {}
 
     resource_results_by_base: Dict[str, Dict[str, Any]] = {
         _base_test_name(r.get("test_name", "unknown")): r
@@ -196,12 +202,16 @@ def create_and_save_graphs(
     for result in tx_results:
         test_name = result.get("test_name", "unknown")
         base_name = _base_test_name(test_name)
+        if "." in test_name:
+            suite, test = test_name.split(".", 1)
+        else:
+            suite, test = "__root__", test_name
         resource_result = resource_results_by_base.get(base_name)
         figures: list[tuple[Figure, str]] = [
-            (plot_tps_over_time(result), f"{test_name}_tps_over_time"),
-            (plot_errors_over_time(result), f"{test_name}_errors_over_time"),
-            (plot_response_times_by_api(result), f"{test_name}_response_times_by_api"),
-            (plot_error_rate_by_api(result), f"{test_name}_error_rate_by_api"),
+            (plot_tps_over_time(result), f"TPS Over Time - {test_name}"),
+            (plot_errors_over_time(result), f"Errors Over Time - {test_name}"),
+            (plot_response_times_by_api(result), f"Response Times by API - {test_name}"),
+            (plot_error_rate_by_api(result), f"Error Rate by API - {test_name}"),
         ]
         if resource_result:
             figures.append(
@@ -211,45 +221,41 @@ def create_and_save_graphs(
                         resource_result,
                         title=f"TPS vs Resources: {base_name}",
                     ),
-                    f"{test_name}_tps_vs_resources",
+                    f"TPS vs Resources - {test_name}",
                 )
             )
             figures.append(
-                (plot_tps_vs_cpu(result, resource_result), f"{test_name}_tps_vs_cpu")
+                (plot_tps_vs_cpu(result, resource_result), f"TPS vs CPU - {test_name}")
             )
             figures.append(
                 (
                     plot_tps_vs_memory(result, resource_result),
-                    f"{test_name}_tps_vs_memory",
+                    f"TPS vs Memory - {test_name}",
                 )
             )
             figures.append(
                 (
                     plot_errors_vs_resources(result, resource_result),
-                    f"{test_name}_errors_vs_resources",
+                    f"Errors vs Resources - {test_name}",
                 )
             )
             figures.append(
-                (plot_errors_vs_cpu(result, resource_result), f"{test_name}_errors_vs_cpu")
+                (plot_errors_vs_cpu(result, resource_result), f"Errors vs CPU - {test_name}")
             )
             figures.append(
                 (
                     plot_errors_vs_memory(result, resource_result),
-                    f"{test_name}_errors_vs_memory",
+                    f"Errors vs Memory - {test_name}",
                 )
             )
-        for fig, filename in figures:
-            try:
-                save_figure(fig, plots_dir, filename)
-            finally:
-                plt.close(fig)
+        for fig, title in figures:
+            _add_graph(graphs_by_suite, suite, test, title, fig)
 
     if len(tx_results) > 1:
         comp = plot_comparison_tps(tx_results)
-        try:
-            save_figure(comp, plots_dir, "comparison_tps")
-        finally:
-            plt.close(comp)
+        _add_graph(graphs_by_suite, "__overall__", "all_tests", "TPS Comparison", comp)
+
+    _render_dashboard(graphs_by_suite, html_output)
 
 
 __all__ = [
@@ -320,6 +326,110 @@ def _has_valid_data(values: list[float]) -> bool:
     return any(isinstance(v, (int, float)) and not math.isnan(v) for v in values)
 
 
+def _figure_to_base64(fig: Figure, *, fmt: str = "png") -> str:
+    buf = BytesIO()
+    fig.savefig(buf, format=fmt, bbox_inches="tight")
+    buf.seek(0)
+    data = base64.b64encode(buf.read()).decode("ascii")
+    plt.close(fig)
+    return f"data:image/{fmt};base64,{data}"
+
+
+def _add_graph(
+    graphs: dict[str, dict[str, list[dict[str, str]]]],
+    suite: str,
+    test: str,
+    title: str,
+    fig: Figure,
+) -> None:
+    graphs.setdefault(suite, {}).setdefault(test, []).append(
+        {"title": title, "src": _figure_to_base64(fig)}
+    )
+
+
+def _safe_id(text: str) -> str:
+    return re.sub(r"[^a-zA-Z0-9_-]+", "-", text)
+
+
+def _render_dashboard(graphs_by_suite: dict[str, dict[str, list[dict[str, str]]]], output_path: str) -> None:
+    suites = sorted(graphs_by_suite.keys())
+    nav_links = "".join(
+        f'<a class="nav-link" href="#{_safe_id(suite)}">{html.escape(suite)}</a>'
+        for suite in suites
+    )
+
+    suite_sections: list[str] = []
+    for suite in suites:
+        tests = graphs_by_suite[suite]
+        test_blocks: list[str] = []
+        for test_name, charts in sorted(tests.items()):
+            cards = "".join(
+                f'''
+                <div class="card">
+                    <div class="card-title">{html.escape(chart["title"])}</div>
+                    <img src="{chart["src"]}" alt="{html.escape(chart["title"])}" loading="lazy" />
+                </div>
+                '''
+                for chart in charts
+            )
+            test_blocks.append(
+                f'''
+                <div class="test-block">
+                    <h3>{html.escape(test_name)}</h3>
+                    <div class="card-grid">
+                        {cards}
+                    </div>
+                </div>
+                '''
+            )
+        suite_sections.append(
+            f'''
+            <section id="{_safe_id(suite)}" class="suite-section">
+                <h2>Suite: {html.escape(suite)}</h2>
+                {''.join(test_blocks)}
+            </section>
+            '''
+        )
+
+    html_doc = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Performance Dashboard</title>
+  <style>
+    body {{ font-family: Arial, sans-serif; margin: 0; background: #f8f9fa; color: #222; }}
+    header {{ background: #343a40; color: white; padding: 12px 16px; position: sticky; top: 0; z-index: 10; }}
+    h1 {{ margin: 0; font-size: 20px; }}
+    .nav {{ margin-top: 8px; display: flex; flex-wrap: wrap; gap: 8px; }}
+    .nav-link {{ color: #e9ecef; text-decoration: none; padding: 6px 10px; border-radius: 4px; background: #495057; font-size: 13px; }}
+    .nav-link:hover {{ background: #6c757d; }}
+    main {{ padding: 16px; }}
+    .suite-section {{ margin-bottom: 32px; }}
+    .suite-section h2 {{ margin-bottom: 12px; }}
+    .test-block {{ margin-bottom: 24px; }}
+    .card-grid {{ display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }}
+    .card {{ background: white; border: 1px solid #dee2e6; border-radius: 6px; padding: 10px; box-shadow: 0 1px 2px rgba(0,0,0,0.06); }}
+    .card-title {{ font-weight: 600; margin-bottom: 8px; font-size: 14px; }}
+    img {{ width: 100%; height: auto; display: block; border-radius: 4px; }}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Performance Dashboard</h1>
+    <div class="nav">
+      {nav_links}
+    </div>
+  </header>
+  <main>
+    {''.join(suite_sections)}
+  </main>
+</body>
+</html>
+"""
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(html_doc)
+
+
 def _plot_metric_with_resources(
     metric_seconds: list[int],
     metric_values: list[float],
@@ -331,7 +441,6 @@ def _plot_metric_with_resources(
     metric_label: str,
     title: str,
     metric_color: str = "#007bff",
-    metric_ylim: float | None = None,
 ) -> Figure:
     has_cpu = _has_valid_data(cpu_values)
     has_mem = _has_valid_data(mem_values)
@@ -355,8 +464,6 @@ def _plot_metric_with_resources(
     )
     ax1.set_xlabel("Second")
     ax1.set_ylabel(metric_label)
-    if metric_ylim is not None:
-        ax1.set_ylim(0, metric_ylim)
     ax1.set_xlim(1, max_time)
     ax1.grid(True, linestyle="--", alpha=0.35)
 
@@ -504,7 +611,6 @@ def plot_tps_vs_cpu(
         [],
         metric_label="TPS",
         title=f"TPS vs CPU: {_base_test_name(result.get('test_name', 'unknown'))}",
-        metric_ylim=get_config_value("target_tps", 100),
     )
 
 
@@ -534,7 +640,6 @@ def plot_tps_vs_memory(
         mem_values,
         metric_label="TPS",
         title=f"TPS vs Memory: {_base_test_name(result.get('test_name', 'unknown'))}",
-        metric_ylim=get_config_value("target_tps", 100)
     )
 
 
