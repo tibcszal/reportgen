@@ -1,5 +1,6 @@
 {
     "tps_threshold": 100,
     "target_tps": 103,
-    "error_rate_threshold": 0.1
+    "error_rate_threshold": 0.1,
+    "resource_sampling_rate_in_seconds": 15
 }

@@ -214,6 +214,30 @@ def create_and_save_graphs(
                     f"{test_name}_tps_vs_resources",
                 )
             )
+            figures.append(
+                (plot_tps_vs_cpu(result, resource_result), f"{test_name}_tps_vs_cpu")
+            )
+            figures.append(
+                (
+                    plot_tps_vs_memory(result, resource_result),
+                    f"{test_name}_tps_vs_memory",
+                )
+            )
+            figures.append(
+                (
+                    plot_errors_vs_resources(result, resource_result),
+                    f"{test_name}_errors_vs_resources",
+                )
+            )
+            figures.append(
+                (plot_errors_vs_cpu(result, resource_result), f"{test_name}_errors_vs_cpu")
+            )
+            figures.append(
+                (
+                    plot_errors_vs_memory(result, resource_result),
+                    f"{test_name}_errors_vs_memory",
+                )
+            )
         for fig, filename in figures:
             try:
                 save_figure(fig, plots_dir, filename)
@@ -234,6 +258,11 @@ __all__ = [
     "plot_response_times_by_api",
     "plot_error_rate_by_api",
     "plot_tps_vs_resource_usage",
+    "plot_tps_vs_cpu",
+    "plot_tps_vs_memory",
+    "plot_errors_vs_resources",
+    "plot_errors_vs_cpu",
+    "plot_errors_vs_memory",
     "plot_comparison_tps",
     "save_figure",
     "create_and_save_graphs",
@@ -255,7 +284,9 @@ def _empty_fig(message: str) -> Figure:
     return fig
 
 
-def _series_from_time_map(time_map: Dict[Any, float]) -> tuple[list[int], list[float]]:
+def _series_from_time_map(
+    time_map: Dict[Any, float], sampling_interval: float | int = 1
+) -> tuple[list[int], list[float]]:
     if not time_map:
         return [], []
     series: list[tuple[float, float]] = []
@@ -275,8 +306,89 @@ def _series_from_time_map(time_map: Dict[Any, float]) -> tuple[list[int], list[f
         times = [t / 1000.0 for t in times]
     start = min(times)
     norm_times = [int(round(t - start + 1)) for t in times]
+    try:
+        interval = float(sampling_interval)
+    except (TypeError, ValueError):
+        interval = 1.0
+    interval = interval if interval > 0 else 1.0
+    scaled_times = [int(round(t * interval)) for t in norm_times]
     values = [v for _, v in series]
-    return norm_times, values
+    return scaled_times, values
+
+
+def _has_valid_data(values: list[float]) -> bool:
+    return any(isinstance(v, (int, float)) and not math.isnan(v) for v in values)
+
+
+def _plot_metric_with_resources(
+    metric_seconds: list[int],
+    metric_values: list[float],
+    cpu_seconds: list[int],
+    cpu_values: list[float],
+    mem_seconds: list[int],
+    mem_values: list[float],
+    *,
+    metric_label: str,
+    title: str,
+    metric_color: str = "#007bff",
+    metric_ylim: float | None = None,
+) -> Figure:
+    has_cpu = _has_valid_data(cpu_values)
+    has_mem = _has_valid_data(mem_values)
+
+    if not metric_values or (not has_cpu and not has_mem):
+        return _empty_fig("No overlapping data")
+
+    max_time = max(
+        [metric_seconds[-1] if metric_seconds else 0]
+        + ([max(cpu_seconds)] if has_cpu and cpu_seconds else [])
+        + ([max(mem_seconds)] if has_mem and mem_seconds else [])
+    )
+
+    fig, ax1 = plt.subplots(figsize=(9, 5))
+    metric_line = ax1.plot(
+        metric_seconds,
+        metric_values,
+        label=metric_label,
+        color=metric_color,
+        linewidth=1.3,
+    )
+    ax1.set_xlabel("Second")
+    ax1.set_ylabel(metric_label)
+    if metric_ylim is not None:
+        ax1.set_ylim(0, metric_ylim)
+    ax1.set_xlim(1, max_time)
+    ax1.grid(True, linestyle="--", alpha=0.35)
+
+    handles = list(metric_line)
+    if has_cpu or has_mem:
+        ax2 = ax1.twinx()
+        if has_cpu:
+            cpu_line = ax2.plot(
+                cpu_seconds,
+                cpu_values,
+                label="CPU (mcores)",
+                color="#f0ad4e",
+                linestyle="--",
+                linewidth=1.1,
+            )
+            handles.extend(cpu_line)
+        if has_mem:
+            mem_line = ax2.plot(
+                mem_seconds,
+                mem_values,
+                label="Memory (MiB)",
+                color="#5cb85c",
+                linestyle=":",
+                linewidth=1.1,
+            )
+            handles.extend(mem_line)
+        ax2.set_ylabel("CPU / Memory")
+
+    ax1.set_title(title)
+    ax1.legend(handles=handles, loc="upper right")
+    fig.tight_layout()
+    return fig
 
 
 def _bytes_to_mib(value: Any) -> float | None:
@@ -302,18 +414,21 @@ def plot_tps_vs_resource_usage(
         return _empty_fig("No matching transaction/resource data")
 
     tps_map: Dict[str, float] = result.get("transaction_count_per_second", {})
-    cpu_map: Dict[str, float] = resource_result.get("cpu_avg_over_time", {})
-    mem_map_raw: Dict[str, float] = resource_result.get("memory_avg_over_time", {})
+    cpu_map: Dict[str, float] = resource_result.get("cpu_max_over_time", {}) or resource_result.get("cpu_avg_over_time", {})
+    mem_map_raw: Dict[str, float] = resource_result.get("memory_max_over_time", {}) or resource_result.get("memory_avg_over_time", {})
+    sampling_interval = get_config_value("resource_sampling_rate_in_seconds", 1)
 
     tps_seconds, tps_values = _series_from_second_map(tps_map)
-    cpu_seconds, cpu_values = _series_from_time_map(cpu_map)
-    mem_seconds, mem_bytes = _series_from_time_map(mem_map_raw)
+    cpu_seconds, cpu_values = _series_from_time_map(cpu_map, sampling_interval=sampling_interval)
+    mem_seconds, mem_bytes = _series_from_time_map(mem_map_raw, sampling_interval=sampling_interval)
     mem_values: list[float] = []
     for val in mem_bytes:
         converted = _bytes_to_mib(val)
         mem_values.append(converted if converted is not None else math.nan)
+    has_cpu = _has_valid_data(cpu_values)
+    has_mem = _has_valid_data(mem_values)
 
-    if not tps_values or (not cpu_values and not mem_values):
+    if not tps_values or (not has_cpu and not has_mem):
         return _empty_fig("No overlapping TPS/resource data")
 
     max_time = max(
@@ -335,7 +450,7 @@ def plot_tps_vs_resource_usage(
     ax2 = ax1.twinx()
     handles = list(tps_line)
 
-    if cpu_values:
+    if has_cpu:
         cpu_line = ax2.plot(
             cpu_seconds,
             cpu_values,
@@ -345,7 +460,7 @@ def plot_tps_vs_resource_usage(
             linewidth=1.1,
         )
         handles.extend(cpu_line)
-    if mem_values:
+    if has_mem:
         mem_line = ax2.plot(
             mem_seconds,
             mem_values,
@@ -355,7 +470,8 @@ def plot_tps_vs_resource_usage(
             linewidth=1.1,
         )
         handles.extend(mem_line)
-    ax2.set_ylabel("CPU / Memory")
+    if has_cpu or has_mem:
+        ax2.set_ylabel("CPU / Memory")
 
     ax1.set_title(
         title
@@ -364,3 +480,149 @@ def plot_tps_vs_resource_usage(
     ax1.legend(handles=handles, loc="upper right")
     fig.tight_layout()
     return fig
+
+
+def plot_tps_vs_cpu(
+    result: Dict[str, Any],
+    resource_result: Dict[str, Any],
+) -> Figure:
+    sampling_interval = get_config_value("resource_sampling_rate_in_seconds", 1)
+    tps_map: Dict[str, float] = result.get("transaction_count_per_second", {})
+    cpu_map: Dict[str, float] = resource_result.get("cpu_max_over_time", {}) or resource_result.get("cpu_avg_over_time", {})
+
+    tps_seconds, tps_values = _series_from_second_map(tps_map)
+    cpu_seconds, cpu_values = _series_from_time_map(
+        cpu_map, sampling_interval=sampling_interval
+    )
+
+    return _plot_metric_with_resources(
+        tps_seconds,
+        tps_values,
+        cpu_seconds,
+        cpu_values,
+        [],
+        [],
+        metric_label="TPS",
+        title=f"TPS vs CPU: {_base_test_name(result.get('test_name', 'unknown'))}",
+        metric_ylim=get_config_value("target_tps", 100),
+    )
+
+
+def plot_tps_vs_memory(
+    result: Dict[str, Any],
+    resource_result: Dict[str, Any],
+) -> Figure:
+    sampling_interval = get_config_value("resource_sampling_rate_in_seconds", 1)
+    tps_map: Dict[str, float] = result.get("transaction_count_per_second", {})
+    mem_map_raw: Dict[str, float] = resource_result.get("memory_max_over_time", {}) or resource_result.get("memory_avg_over_time", {})
+
+    tps_seconds, tps_values = _series_from_second_map(tps_map)
+    mem_seconds, mem_bytes = _series_from_time_map(
+        mem_map_raw, sampling_interval=sampling_interval
+    )
+    mem_values: list[float] = []
+    for val in mem_bytes:
+        converted = _bytes_to_mib(val)
+        mem_values.append(converted if converted is not None else math.nan)
+
+    return _plot_metric_with_resources(
+        tps_seconds,
+        tps_values,
+        [],
+        [],
+        mem_seconds,
+        mem_values,
+        metric_label="TPS",
+        title=f"TPS vs Memory: {_base_test_name(result.get('test_name', 'unknown'))}",
+        metric_ylim=get_config_value("target_tps", 100)
+    )
+
+
+def plot_errors_vs_resources(
+    result: Dict[str, Any],
+    resource_result: Dict[str, Any],
+) -> Figure:
+    sampling_interval = get_config_value("resource_sampling_rate_in_seconds", 1)
+    err_map: Dict[int, int] = result.get("error_count_per_second", {})
+    cpu_map: Dict[str, float] = resource_result.get("cpu_max_over_time", {}) or resource_result.get("cpu_avg_over_time", {})
+    mem_map_raw: Dict[str, float] = resource_result.get("memory_max_over_time", {}) or resource_result.get("memory_avg_over_time", {})
+
+    err_seconds, err_values = _series_from_second_map(err_map)
+    cpu_seconds, cpu_values = _series_from_time_map(
+        cpu_map, sampling_interval=sampling_interval
+    )
+    mem_seconds, mem_bytes = _series_from_time_map(
+        mem_map_raw, sampling_interval=sampling_interval
+    )
+    mem_values: list[float] = []
+    for val in mem_bytes:
+        converted = _bytes_to_mib(val)
+        mem_values.append(converted if converted is not None else math.nan)
+
+    return _plot_metric_with_resources(
+        err_seconds,
+        err_values,
+        cpu_seconds,
+        cpu_values,
+        mem_seconds,
+        mem_values,
+        metric_label="Errors",
+        metric_color="#d9534f",
+        title=f"Errors vs Resources: {_base_test_name(result.get('test_name', 'unknown'))}",
+    )
+
+
+def plot_errors_vs_cpu(
+    result: Dict[str, Any],
+    resource_result: Dict[str, Any],
+) -> Figure:
+    sampling_interval = get_config_value("resource_sampling_rate_in_seconds", 1)
+    err_map: Dict[int, int] = result.get("error_count_per_second", {})
+    cpu_map: Dict[str, float] = resource_result.get("cpu_max_over_time", {}) or resource_result.get("cpu_avg_over_time", {})
+
+    err_seconds, err_values = _series_from_second_map(err_map)
+    cpu_seconds, cpu_values = _series_from_time_map(
+        cpu_map, sampling_interval=sampling_interval
+    )
+
+    return _plot_metric_with_resources(
+        err_seconds,
+        err_values,
+        cpu_seconds,
+        cpu_values,
+        [],
+        [],
+        metric_label="Errors",
+        metric_color="#d9534f",
+        title=f"Errors vs CPU: {_base_test_name(result.get('test_name', 'unknown'))}",
+    )
+
+
+def plot_errors_vs_memory(
+    result: Dict[str, Any],
+    resource_result: Dict[str, Any],
+) -> Figure:
+    sampling_interval = get_config_value("resource_sampling_rate_in_seconds", 1)
+    err_map: Dict[int, int] = result.get("error_count_per_second", {})
+    mem_map_raw: Dict[str, float] = resource_result.get("memory_max_over_time", {}) or resource_result.get("memory_avg_over_time", {})
+
+    err_seconds, err_values = _series_from_second_map(err_map)
+    mem_seconds, mem_bytes = _series_from_time_map(
+        mem_map_raw, sampling_interval=sampling_interval
+    )
+    mem_values: list[float] = []
+    for val in mem_bytes:
+        converted = _bytes_to_mib(val)
+        mem_values.append(converted if converted is not None else math.nan)
+
+    return _plot_metric_with_resources(
+        err_seconds,
+        err_values,
+        [],
+        [],
+        mem_seconds,
+        mem_values,
+        metric_label="Errors",
+        metric_color="#d9534f",
+        title=f"Errors vs Memory: {_base_test_name(result.get('test_name', 'unknown'))}",
+    )
