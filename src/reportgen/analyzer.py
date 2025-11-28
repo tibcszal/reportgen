@@ -1,6 +1,6 @@
 import pandas as pd
 from typing import Any, Callable
-from config_store import get_config_value
+from .config_store import get_config_value
 
 
 def analyze_data(

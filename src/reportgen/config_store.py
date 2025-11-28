@@ -5,7 +5,14 @@ import pathlib
 from typing import Any, Optional
 
 _cached_config: dict[str, Any] | None = None
-_config_path: pathlib.Path = pathlib.Path(__file__).with_name("config.json")
+
+
+def default_config_path() -> pathlib.Path:
+    """Return the bundled config.json path that ships with the package."""
+    return pathlib.Path(__file__).with_name("config.json")
+
+
+_config_path: pathlib.Path = default_config_path()
 
 
 def load_config(path: Optional[str | pathlib.Path] = None) -> dict[str, Any] | None:

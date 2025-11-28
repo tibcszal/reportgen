@@ -1,9 +1,9 @@
 from typing import Any
-from cli import parse_args
-from loader import load
-from analyzer import analyze_data
-from reporter import generate_excel_report
-from graphs import create_and_save_graphs
+from .cli import parse_args
+from .loader import load
+from .analyzer import analyze_data
+from .reporter import generate_excel_report
+from .graphs import create_and_save_graphs
 
 
 def main():

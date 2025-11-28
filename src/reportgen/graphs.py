@@ -7,7 +7,7 @@ import math
 import os
 import html
 import re
-from config_store import get_config_value
+from .config_store import get_config_value
 import base64
 from io import BytesIO
 

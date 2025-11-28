@@ -2,18 +2,18 @@ import pandas as pd
 from os import path, listdir
 import json
 from typing import Any, Dict
-from config_store import load_config
+from .config_store import load_config
 
 
 def load(
-    requests_dir: str, generator_type: str, config_path: str
+    requests_dir: str, generator_type: str, config_path: str | None = None
 ) -> dict[str, pd.DataFrame]:
     load_config_file(config_path)
     dfs = load_dfs_per_suite_flat(requests_dir, generator_type)
     return dfs
 
 
-def load_config_file(config_path: str) -> dict[str, Any] | None:
+def load_config_file(config_path: str | None) -> dict[str, Any] | None:
     return load_config(config_path)
 
 
