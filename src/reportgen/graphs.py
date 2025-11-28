@@ -9,6 +9,7 @@ from typing import Dict, Any, List, Optional
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 from .config_store import get_config_value
+from .storage import load_history
 import base64
 from io import BytesIO
 
@@ -32,6 +33,32 @@ def _series_from_second_map(
     seconds = [sec for sec, _ in series]
     values = [val for _, val in series]
     return seconds, values
+
+
+def _aggregate_history_daily(history: Dict[str, Dict[str, str]]) -> tuple[list[str], list[int], list[int]]:
+    """Return sorted dates with counts of pass/fail per day."""
+    daily: dict[str, dict[str, int]] = {}
+    for entries in history.values():
+        if not isinstance(entries, dict):
+            continue
+        for ts, verdict in entries.items():
+            try:
+                dt_obj = dt.datetime.fromisoformat(str(ts))
+            except ValueError:
+                continue
+            day = dt_obj.date().isoformat()
+            verdict_upper = str(verdict).upper()
+            daily.setdefault(day, {"PASS": 0, "FAIL": 0})
+            if verdict_upper == "PASS":
+                daily[day]["PASS"] += 1
+            elif verdict_upper == "FAIL":
+                daily[day]["FAIL"] += 1
+    if not daily:
+        return [], [], []
+    dates = sorted(daily.keys())
+    passes = [daily[d].get("PASS", 0) for d in dates]
+    fails = [daily[d].get("FAIL", 0) for d in dates]
+    return dates, passes, fails
 
 
 def plot_tps_over_time(
@@ -203,6 +230,31 @@ def plot_comparison_tps(
     return fig
 
 
+def plot_historical_verdicts(
+    history: Dict[str, Dict[str, str]],
+    *,
+    title: str = "Daily Pass/Fail Counts",
+) -> Figure:
+    dates, passes, fails = _aggregate_history_daily(history)
+    if not dates:
+        return _empty_fig("No historical data")
+    positions = list(range(len(dates)))
+    width = 0.35
+    fig, ax = plt.subplots(figsize=(max(8, len(dates) * 0.9), 5))
+    ax.bar([p - width / 2 for p in positions], passes, width=width, color="#5cb85c", label="Passed")
+    ax.bar([p + width / 2 for p in positions], fails, width=width, color="#d9534f", label="Failed")
+    ax.plot(positions, passes, color="#3c763d", marker="o", linewidth=1.2)
+    ax.plot(positions, fails, color="#a94442", marker="o", linewidth=1.2)
+    ax.set_xticks(positions)
+    ax.set_xticklabels(dates, rotation=45, ha="right")
+    ax.set_ylabel("Test Count")
+    ax.set_title(title)
+    ax.grid(axis="y", linestyle="--", alpha=0.35)
+    ax.legend()
+    fig.tight_layout()
+    return fig
+
+
 def save_figure(fig: Figure, directory: str, name: str, *, fmt: str = "png") -> str:
     os.makedirs(directory, exist_ok=True)
     safe = name.strip().lower().replace(" ", "_").replace("/", "_").replace(".", "_")
@@ -212,7 +264,9 @@ def save_figure(fig: Figure, directory: str, name: str, *, fmt: str = "png") -> 
 
 
 def create_and_save_graphs(
-    analysis_results: List[Dict[str, Any]], plots_dir: str
+    analysis_results: List[Dict[str, Any]],
+    plots_dir: str,
+    history: Dict[str, Dict[str, str]] | None = None,
 ) -> None:
     os.makedirs(plots_dir, exist_ok=True)
     html_output = os.path.join(plots_dir, "dashboard.html")
@@ -292,6 +346,17 @@ def create_and_save_graphs(
         comp = plot_comparison_tps(tx_results)
         _add_graph(graphs_by_suite, "__overall__", "all_tests", "TPS Comparison", comp)
 
+    historical_data = history if history is not None else load_history()
+    historical_enabled = bool(
+        graphs_config.get(
+            "historical_verdicts",
+            graphs_config.get("historical_trends", True),
+        )
+    )
+    if historical_enabled:
+        hist_fig = plot_historical_verdicts(historical_data or {})
+        _add_graph(graphs_by_suite, "__overall__", "history", "Historical Pass/Fail", hist_fig)
+
     generated_at = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     _render_dashboard(graphs_by_suite, html_output, generated_at)
 
@@ -309,6 +374,7 @@ __all__ = [
     "plot_errors_vs_cpu",
     "plot_errors_vs_memory",
     "plot_comparison_tps",
+    "plot_historical_verdicts",
     "save_figure",
     "create_and_save_graphs",
 ]
@@ -418,7 +484,7 @@ def _render_dashboard(
         overall_section = f"""
         <section class="suite-section">
             <h2>Overall</h2>
-            <div class="card-grid">{cards}</div>
+            <div class="card-grid overall-grid">{cards}</div>
         </section>
         """
 
@@ -469,6 +535,7 @@ def _render_dashboard(
     main {{ padding: 16px; }}
     .suite-section {{ margin-bottom: 24px; }}
     .card-grid {{ display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }}
+    .overall-grid {{ max-width: 50vw; margin: 0 auto; }}
     .card {{ background: white; border: 1px solid #dee2e6; border-radius: 6px; padding: 10px; box-shadow: 0 1px 2px rgba(0,0,0,0.06); }}
     .card-title {{ font-weight: 600; margin-bottom: 8px; font-size: 14px; }}
     img {{ width: 100%; height: auto; display: block; border-radius: 4px; }}

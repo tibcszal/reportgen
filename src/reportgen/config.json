@@ -10,7 +10,11 @@
         "enabled": true,
         "overall_tps_comparison": false,
         "multiple_api_in_single_test": false,
-        "resource_usage_metrics": false
+        "resource_usage_metrics": false,
+        "historical_verdicts": true
     },
-    "storage_path": "past_results.json"
+    "storage": {
+        "enabled": false,
+        "path": "past_results.json"
+    }
 }

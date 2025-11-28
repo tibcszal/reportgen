@@ -38,3 +38,22 @@ def get_config() -> dict[str, Any]:
 def get_config_value(key: str, default: Any = None) -> Any:
     """Convenience accessor for a single config value."""
     return get_config().get(key, default)
+
+
+def get_storage_config() -> dict[str, Any]:
+    """Return storage config with defaults applied."""
+    cfg = get_config()
+    storage_cfg = cfg.get("storage", {}) or {}
+    enabled = bool(storage_cfg.get("enabled", True))
+    path = storage_cfg.get("path", "past_results.json")
+    return {"enabled": enabled, "path": path}
+
+
+def get_storage_path() -> pathlib.Path:
+    """Return the absolute path to the history storage file."""
+    storage_cfg = get_storage_config()
+    raw = storage_cfg.get("path", "past_results.json")
+    p = pathlib.Path(raw)
+    if not p.is_absolute():
+        p = _config_path.parent / p
+    return p
