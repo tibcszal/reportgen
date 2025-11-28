@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from typing import Dict, Any, List, Optional
-import matplotlib.pyplot as plt
-from matplotlib.figure import Figure
 import math
 import os
 import html
 import re
+import datetime as dt
+from typing import Dict, Any, List, Optional
+import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
 from .config_store import get_config_value
 import base64
 from io import BytesIO
@@ -74,6 +75,30 @@ def plot_errors_over_time(
     ax.set_ylabel("Errors")
     ax.set_title(title or f"Errors Over Time: {result.get('test_name', 'unknown')}")
     ax.grid(axis="y", linestyle="--", alpha=0.4)
+    return fig
+
+
+def plot_avg_response_time_over_time(
+    result: Dict[str, Any], *, title: Optional[str] = None
+) -> Figure:
+    if not is_transaction_result(result):
+        return _empty_fig("No response time data")
+    avg_map: Dict[int, float] = result.get("avg_response_time_per_second", {})
+    duration = int(result.get("test_duration_in_seconds", len(avg_map)))
+    if duration <= 0:
+        return _empty_fig("No duration")
+    seconds, avg_values = _series_from_second_map(avg_map)
+    fig, ax = plt.subplots(figsize=(8, 4))
+    marker_style = "o" if duration <= 120 else None
+    ax.plot(seconds, avg_values, marker=marker_style, linewidth=1.4, color="#5bc0de")
+    if duration > 0 and seconds:
+        ax.set_xlim(1, max(seconds))
+    ax.set_xlabel("Second")
+    ax.set_ylabel("Avg Response Time (ms)")
+    ax.set_title(
+        title or f"Avg Response Time Over Time: {result.get('test_name', 'unknown')}"
+    )
+    ax.grid(True, linestyle="--", alpha=0.4)
     return fig
 
 
@@ -192,6 +217,12 @@ def create_and_save_graphs(
     os.makedirs(plots_dir, exist_ok=True)
     html_output = os.path.join(plots_dir, "dashboard.html")
     graphs_by_suite: dict[str, dict[str, list[dict[str, str]]]] = {}
+    graphs_config = get_config_value("graphs", {}) or {}
+    resource_enabled = bool(graphs_config.get("resource_usage_metrics", True))
+    overall_comparison_enabled = bool(
+        graphs_config.get("overall_tps_comparison", True)
+    )
+    multi_api_enabled = bool(graphs_config.get("multiple_api_in_single_test", True))
 
     resource_results_by_base: Dict[str, Dict[str, Any]] = {
         _base_test_name(r.get("test_name", "unknown")): r
@@ -208,12 +239,18 @@ def create_and_save_graphs(
             suite, test = "__root__", test_name
         resource_result = resource_results_by_base.get(base_name)
         figures: list[tuple[Figure, str]] = [
-            (plot_tps_over_time(result), f"TPS Over Time"),
-            (plot_errors_over_time(result), f"Errors Over Time"),
-            (plot_response_times_by_api(result), f"Response Times by API"),
-            (plot_error_rate_by_api(result), f"Error Rate by API"),
+            (plot_tps_over_time(result), "TPS Over Time"),
+            (plot_errors_over_time(result), "Errors Over Time"),
+            (plot_avg_response_time_over_time(result), "Avg Response Time Over Time"),
         ]
-        if resource_result:
+        if multi_api_enabled:
+            figures.extend(
+                [
+                    (plot_response_times_by_api(result), "Response Times by API"),
+                    (plot_error_rate_by_api(result), "Error Rate by API"),
+                ]
+            )
+        if resource_enabled and resource_result:
             figures.append(
                 (
                     plot_tps_vs_resource_usage(
@@ -251,16 +288,18 @@ def create_and_save_graphs(
         for fig, title in figures:
             _add_graph(graphs_by_suite, suite, test, title, fig)
 
-    if len(tx_results) > 1:
+    if overall_comparison_enabled and len(tx_results) > 1:
         comp = plot_comparison_tps(tx_results)
         _add_graph(graphs_by_suite, "__overall__", "all_tests", "TPS Comparison", comp)
 
-    _render_dashboard(graphs_by_suite, html_output)
+    generated_at = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    _render_dashboard(graphs_by_suite, html_output, generated_at)
 
 
 __all__ = [
     "plot_tps_over_time",
     "plot_errors_over_time",
+    "plot_avg_response_time_over_time",
     "plot_response_times_by_api",
     "plot_error_rate_by_api",
     "plot_tps_vs_resource_usage",
@@ -351,7 +390,11 @@ def _safe_id(text: str) -> str:
     return re.sub(r"[^a-zA-Z0-9_-]+", "-", text)
 
 
-def _render_dashboard(graphs_by_suite: dict[str, dict[str, list[dict[str, str]]]], output_path: str) -> None:
+def _render_dashboard(
+    graphs_by_suite: dict[str, dict[str, list[dict[str, str]]]],
+    output_path: str,
+    generated_at: str,
+) -> None:
     overall = graphs_by_suite.get("__overall__", {})
     overall_graphs = []
     if overall:
@@ -439,7 +482,7 @@ def _render_dashboard(graphs_by_suite: dict[str, dict[str, list[dict[str, str]]]
 </head>
 <body>
   <header>
-    <h1>Performance Dashboard</h1>
+    <h1>Performance Dashboard — Generated {html.escape(generated_at)}</h1>
   </header>
   <main>
     {overall_section}
@@ -520,6 +563,8 @@ def _plot_metric_with_resources(
         ax2.set_ylabel("CPU / Memory")
 
     ax1.set_title(title)
+    if metric_label == "TPS":
+        ax1.set_ylim(1, get_config_value("target_tps", 100))
     ax1.legend(handles=handles, loc="upper right")
     fig.tight_layout()
     return fig

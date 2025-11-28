@@ -32,6 +32,7 @@ def analyze_results_data(
 
     dfs_by_seconds = get_dfs_by_seconds(df_raw)
     tps_by_second = get_tps_by_second(dfs_by_seconds)
+    avg_resp_by_second = get_avg_response_time_per_second(dfs_by_seconds)
     error_count_per_second = get_error_count_per_second(dfs_by_seconds)
 
     response_time_stats = get_response_time_stats(df_raw, dfs_sorted_by_apis)
@@ -48,6 +49,7 @@ def analyze_results_data(
         "test_duration_in_seconds": test_duration_in_seconds,
         "error_count_per_second": error_count_per_second,
         "transaction_count_per_second": tps_by_second,
+        "avg_response_time_per_second": avg_resp_by_second,
         "overall_maximum_response_time": response_time_stats["overall_max"],
         "overall_minimum_response_time": response_time_stats["overall_min"],
         "overall_avg_response_time": response_time_stats["overall_avg"],
@@ -120,12 +122,11 @@ def evaluate_results(
     overall_transaction_count: int,
     tps_by_second: dict[int, float]
 ) -> str:
-    err_threshold = get_config_value("error_rate_threshold", 0.1)
-    tps_threshold = get_config_value("tps_threshold", 100)
-    if (overall_error_count / overall_transaction_count) > err_threshold:
+    evaluation_config = get_config_value("evaluation")
+    if (overall_error_count / overall_transaction_count) > evaluation_config["error_rate_threshold"]:
         return "FAIL"
     for tps in tps_by_second.values():
-        if tps < tps_threshold:
+        if tps < evaluation_config["tps_threshold"]:
             return "FAIL"
     return "PASS"
 
@@ -136,6 +137,15 @@ def get_tps_by_second(
     results: dict[int, float] = {}
     for second, df in dfs_by_seconds.items():
         results[second] = len(df) / 1.0
+    return results
+
+
+def get_avg_response_time_per_second(
+    dfs_by_seconds: dict[int, pd.DataFrame],
+) -> dict[int, float]:
+    results: dict[int, float] = {}
+    for second, df in dfs_by_seconds.items():
+        results[second] = float(df["elapsed"].mean()) if not df.empty else 0.0
     return results
 
 

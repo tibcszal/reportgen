@@ -1,6 +1,16 @@
 {
-    "tps_threshold": 100,
+    "evaluation": {
+        "tps_threshold": 100,
+        "error_rate_threshold": 0.1,
+        "response_time_avg_threshold": 200
+    },
     "target_tps": 103,
-    "error_rate_threshold": 0.1,
-    "resource_sampling_rate_in_seconds": 15
+    "resource_sampling_rate_in_seconds": 15,
+    "graphs": {
+        "enabled": true,
+        "overall_tps_comparison": false,
+        "multiple_api_in_single_test": false,
+        "resource_usage_metrics": false
+    },
+    "storage_path": "past_results.json"
 }
